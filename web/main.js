@@ -3,10 +3,6 @@ const app = document.getElementById('app');
 app.innerHTML = `
   <div class="container">
     <div class="card">
-      <div class="header">
-        <h1>Chuyển đổi đơn vị hành chính sau sáp nhập</h1>
-        <div class="muted">Static-only • Dữ liệu nạp động theo tỉnh</div>
-      </div>
       <div class="row">
         <div>
           <label>Tỉnh/Thành (cũ)</label>
