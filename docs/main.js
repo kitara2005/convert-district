@@ -204,7 +204,8 @@ async function loadNewWards(newProvCode){
   const wards = await fetchJson(`data/new-wards-${newProvCode}.json`);
   $newWard.dataset.json = JSON.stringify(wards);
   $newWardSearch.disabled = false;
-  renderOptions($newWard, wards, x=>x.code, x=>x.name, '-- Chọn phường/xã (mới) --');
+  // Include district code to disambiguate wards trùng tên
+  renderOptions($newWard, wards, x=>x.code, x=> `${x.name}${x.districtCode?` — ${x.districtCode}`:''}`, '-- Chọn phường/xã (mới) --');
 }
 
 async function showReverse(newWardCode){
@@ -220,8 +221,8 @@ async function showReverse(newWardCode){
   $revResults.innerHTML = olds.map(o=>{
     return `
       <div class="result">
-        <div><strong>Đơn vị cũ:</strong> ${o.oldName} (key: ${o.oldKey})</div>
-        <div class="muted">Huyện/TX/Quận cũ: ${o.oldDistrictKey} • Mã tỉnh cũ: ${o.oldProvinceCode}</div>
+        <div><strong>${o.oldWardType?o.oldWardType.charAt(0).toUpperCase()+o.oldWardType.slice(1):'Đơn vị cũ'}:</strong> ${o.oldName} (mã PX: ${o.oldWardCode || '-'})</div>
+        <div class="muted">Huyện/TX/Quận cũ: ${o.oldDistrictName || o.oldDistrictKey} • Tỉnh/Thành cũ: ${o.oldProvinceName || o.oldProvinceCode}</div>
       </div>
     `
   }).join('');
