@@ -99,6 +99,7 @@ function main() {
   const oldProvinces = JSON.parse(fs.readFileSync(INPUT_OLD_PROVINCES, 'utf8'));
   const oldProvByNameKey = new Map(oldProvinces.map(p => [normalizeProvinceName(p.name), p]));
   const oldProvinceCodes = new Set(oldProvinces.map(p => String(p.code)));
+  const oldProvNameByCode = new Map(oldProvinces.map(p => [String(p.code), p.name]));
 
   // Build province merge maps from rawProvinceData
   // - map old province nameKey -> { code: newCode, name: newName }
@@ -108,6 +109,7 @@ function main() {
   const oldNameKeyToNew = new Map(); // oldNameKey -> {code,name}
   const newToOldCodes = new Map();   // newNameKey -> Set(oldCodes)
   const provMetaByCode = new Map();  // newCode -> {dientichkm2, dansonguoi, trungtamhc, con}
+  const newWardsByProv = new Map();  // newCode -> Map(wardCode -> unit)
   for (const pr of provinceMergeRaw) {
     const newName = pr.tentinh;
     const newCode = String(pr.mahc);
@@ -153,6 +155,7 @@ function main() {
 
   // Build per-record and write outputs grouped by OLD province code inferred by name
   const outByOldProvince = new Map(); // code -> Map(oldWardKey -> bestTarget)
+  const revByNewProvince = new Map(); // newProvCode -> Map(newWardCode -> array of old refs)
   const oldIndexCache = new Map();
   function getOldIndex(code) {
     if (!oldIndexCache.has(code)) oldIndexCache.set(code, loadOldIndex(code));
@@ -162,6 +165,12 @@ function main() {
   function getOutMap(oldProvCode) {
     const m = outByOldProvince.get(oldProvCode) || new Map();
     if (!outByOldProvince.has(oldProvCode)) outByOldProvince.set(oldProvCode, m);
+    return m;
+  }
+
+  function getRevMap(newProvCode) {
+    const m = revByNewProvince.get(newProvCode) || new Map();
+    if (!revByNewProvince.has(newProvCode)) revByNewProvince.set(newProvCode, m);
     return m;
   }
 
@@ -187,6 +196,8 @@ function main() {
       if (!truoc) continue;
 
       const sources = parseSources(truoc);
+      // Track what old ward keys have already been assigned within this unit
+      const assignedInThisUnit = new Set();
       const target = {
         provinceNew: { code: String(newProvInfo.code), name: newProvInfo.name },
         provinceStats: provMetaByCode.get(String(newProvInfo.code)) || null,
@@ -198,6 +209,18 @@ function main() {
         },
         note: ''
       };
+
+      // Collect catalog of new wards per province
+      const col = newWardsByProv.get(String(newProvInfo.code)) || new Map();
+      if (!col.has(maNew)) {
+        let districtCode = null;
+        if (typeof unit.cay === 'string') {
+          const parts = unit.cay.split('.');
+          districtCode = parts.length >= 1 ? parts[0] : null;
+        }
+        col.set(maNew, { code: maNew, type: loai, name: tenhc, districtCode });
+        newWardsByProv.set(String(newProvInfo.code), col);
+      }
 
       for (const s of sources) {
         const keyName = stripAdminPrefix(s.name);
@@ -215,6 +238,16 @@ function main() {
               if (filtered.length > 0) { candidates = filtered; parentMatched = true; } else { candidates = []; }
             }
           }
+          // If this is a partial entry like "phần còn lại (huyện X)", expand to all wards in that parent district
+          if (candidates.length === 0 && s.isPartial && s.parentDistrictName) {
+            const parentKey = normalizeVietnamese(s.parentDistrictName);
+            const districtKeys = idx.districtNameKeyToKeys.get(parentKey) || [];
+            if (districtKeys.length > 0) {
+              const districtKeySet = new Set(districtKeys);
+              candidates = idx.wards.filter(w => districtKeySet.has(w.districtKey));
+              parentMatched = true;
+            }
+          }
           if (candidates.length === 0) {
             // Không dùng fallback theo tỉnh cũ để trả kết quả.
             // Nhưng có thể dùng excel để khám phá khóa cũ (discover), vẫn bị ràng buộc theo tỉnh đích (oc in allowedOldCodes)
@@ -223,6 +256,7 @@ function main() {
           }
           if (candidates.length === 0) continue;
           for (const oldWard of candidates) {
+            if (assignedInThisUnit.has(oldWard.key)) continue;
             const outMap = getOutMap(String(oc));
             const prev = outMap.get(oldWard.key);
             const oldType = normalizeVietnamese(String(oldWard.name || '')).split(' ')[0];
@@ -233,6 +267,29 @@ function main() {
             if (!prev) { outMap.set(oldWard.key, cand); continue; }
             const prevScore = typeof prev._score === 'number' ? prev._score : ((prev.note ? 0 : 1));
             if (score > prevScore) outMap.set(oldWard.key, cand);
+
+            // Build reverse index new -> old
+            const rev = getRevMap(String(newProvInfo.code));
+            const list = rev.get(maNew) || [];
+            // resolve district name from current index
+            let oldDistrictName = null;
+            const drec = idx.districts.find(d => d.key === oldWard.districtKey);
+            if (drec) oldDistrictName = drec.name;
+            const oldProvinceName = oldProvNameByCode.get(String(oc)) || '';
+            const oldWardType = oldType === 'phuong' ? 'phường' : (oldType === 'xa' ? 'xã' : null);
+            list.push({
+              oldKey: oldWard.key,
+              oldWardCode: oldWard.code,
+              oldWardType,
+              oldName: oldWard.name,
+              oldDistrictKey: oldWard.districtKey,
+              oldDistrictName,
+              oldProvinceCode: String(oc),
+              oldProvinceName,
+              note: s.isPartial ? 'phần còn lại' : ''
+            });
+            rev.set(maNew, list);
+            assignedInThisUnit.add(oldWard.key);
           }
         }
       }
@@ -273,6 +330,28 @@ function main() {
       fs.writeFileSync(outFile, JSON.stringify(current));
       console.log('Backfilled identity for missing keys in province', oldProvCode);
     } catch {}
+  }
+
+  // Serialize reverse mappings per NEW province
+  for (const [newCode, m] of revByNewProvince.entries()) {
+    const out = {};
+    for (const [k, arr] of m.entries()) out[k] = arr;
+    const outFile = path.join(OUT_DIR, `rev-${newCode}.json`);
+    fs.writeFileSync(outFile, JSON.stringify(out));
+    console.log('Built reverse mapping for new province', newCode, '→', outFile);
+  }
+
+  // Serialize new wards catalogs per NEW province and provinces list
+  const provincesNew = [];
+  for (const [newKey, info] of newProvByNameKey.entries()) {
+    provincesNew.push({ code: String(info.code), name: info.name });
+  }
+  provincesNew.sort((a,b)=>a.code.localeCompare(b.code));
+  fs.writeFileSync(path.join(OUT_DIR, 'provincesNew.json'), JSON.stringify(provincesNew));
+
+  for (const [newCode, col] of newWardsByProv.entries()) {
+    const list = Array.from(col.values()).sort((a,b)=>a.name.localeCompare(b.name, 'vi'));
+    fs.writeFileSync(path.join(OUT_DIR, `new-wards-${newCode}.json`), JSON.stringify(list));
   }
 
   // Overrides disabled per user request (manual list kept for reference but not applied)
