@@ -37,7 +37,9 @@ const cache = new Map();
 
 async function fetchJson(url) {
   if (cache.has(url)) return cache.get(url);
-  const res = await fetch(url);
+  const buster = `v=${Date.now()}`;
+  const full = url.includes('?') ? `${url}&${buster}` : `${url}?${buster}`;
+  const res = await fetch(full, { cache: 'no-store' });
   if (!res.ok) throw new Error('Failed to load ' + url);
   const data = await res.json();
   cache.set(url, data);
