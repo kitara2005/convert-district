@@ -3,10 +3,6 @@ const app = document.getElementById('app');
 app.innerHTML = `
   <div class="container">
     <div class="card">
-      <div class="header">
-        <h1>Chuyển đổi đơn vị hành chính sau sáp nhập</h1>
-        <div class="muted">Static-only • Dữ liệu nạp động theo tỉnh</div>
-      </div>
       <div class="row">
         <div>
           <label>Tỉnh/Thành (cũ)</label>
@@ -97,6 +93,29 @@ async function showMapping(oldWardKey) {
         <div class="copy" data-copy="${escapeHtml(JSON.stringify(t))}">Sao chép</div>
       </div>
       <div><strong>${t.wardNew.type === 'phường' ? 'Phường' : 'Xã/Thị trấn'} (mới):</strong> ${t.wardNew.name} ${t.wardNew.code ? `(mã: ${t.wardNew.code})` : ''} ${t.note ? `<span class=\"badge\">${t.note}</span>` : ''}</div>
+      ${(t.provinceStats || t.wardStats) ? `
+      <div class="meta-grid">
+        ${t.provinceStats ? `
+        <div>
+          <div class="meta-title">Tổng quan tỉnh/thành</div>
+          <dl class="kv">
+            ${t.provinceStats.dientichkm2 ? `<div class="item"><dt>Diện tích</dt><dd>${t.provinceStats.dientichkm2} km²</dd></div>` : ''}
+            ${t.provinceStats.dansonguoi ? `<div class="item"><dt>Dân số</dt><dd>${t.provinceStats.dansonguoi}</dd></div>` : ''}
+            ${t.provinceStats.trungtamhc ? `<div class="item"><dt>Trung tâm HC</dt><dd>${t.provinceStats.trungtamhc}</dd></div>` : ''}
+            ${t.provinceStats.con ? `<div class="item"><dt>Cơ cấu ĐVHC</dt><dd>${t.provinceStats.con}</dd></div>` : ''}
+          </dl>
+        </div>` : ''}
+        ${t.wardStats && (t.wardStats.dientichkm2 || t.wardStats.dansonguoi || t.wardStats.trungtamhc) ? `
+        <div>
+          <div class="meta-title">Thông tin đơn vị mới</div>
+          <dl class="kv">
+            ${t.wardStats.dientichkm2 ? `<div class="item"><dt>Diện tích</dt><dd>${t.wardStats.dientichkm2} km²</dd></div>` : ''}
+            ${t.wardStats.dansonguoi ? `<div class="item"><dt>Dân số</dt><dd>${t.wardStats.dansonguoi}</dd></div>` : ''}
+            ${t.wardStats.trungtamhc ? `<div class="item"><dt>Trung tâm HC</dt><dd>${t.wardStats.trungtamhc}</dd></div>` : ''}
+          </dl>
+        </div>` : ''}
+      </div>
+      ` : ''}
     </div>
   `).join('');
   bindCopy();

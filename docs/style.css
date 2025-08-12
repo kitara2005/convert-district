@@ -27,3 +27,14 @@ select:focus, input:focus { outline: none; border-color: #94b8ff; box-shadow: 0 
   .row { grid-template-columns: 1fr; }
 }
 
+/* Meta blocks */
+.meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 10px; }
+.meta-title { font-weight: 700; font-size: 12px; color: #576485; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 6px; }
+.kv { margin: 0; display: grid; gap: 6px; }
+.kv .item { display: grid; grid-template-columns: 140px 1fr; gap: 10px; align-items: start; }
+.kv dt { margin: 0; font-weight: 600; color: #6a7798; font-size: 12px; }
+.kv dd { margin: 0; color: #1f2a44; font-size: 13px; }
+@media (max-width: 900px) {
+  .meta-grid { grid-template-columns: 1fr; }
+}
+
