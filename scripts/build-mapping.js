@@ -107,11 +107,18 @@ function main() {
   const newProvByNameKey = new Map(); // newNameKey -> {code,name}
   const oldNameKeyToNew = new Map(); // oldNameKey -> {code,name}
   const newToOldCodes = new Map();   // newNameKey -> Set(oldCodes)
+  const provMetaByCode = new Map();  // newCode -> {dientichkm2, dansonguoi, trungtamhc, con}
   for (const pr of provinceMergeRaw) {
     const newName = pr.tentinh;
     const newCode = String(pr.mahc);
     const newKey = normalizeProvinceName(newName);
     newProvByNameKey.set(newKey, { code: newCode, name: newName });
+    provMetaByCode.set(newCode, {
+      dientichkm2: pr.dientichkm2,
+      dansonguoi: pr.dansonguoi,
+      trungtamhc: pr.trungtamhc,
+      con: pr.con,
+    });
     // Default: include itself
     const set = newToOldCodes.get(newKey) || new Set();
     const selfOld = oldProvByNameKey.get(newKey);
@@ -182,7 +189,13 @@ function main() {
       const sources = parseSources(truoc);
       const target = {
         provinceNew: { code: String(newProvInfo.code), name: newProvInfo.name },
+        provinceStats: provMetaByCode.get(String(newProvInfo.code)) || null,
         wardNew: { code: maNew, type: loai, name: tenhc },
+        wardStats: {
+          dientichkm2: unit.dientichkm2 ?? null,
+          dansonguoi: unit.dansonguoi ?? null,
+          trungtamhc: unit.trungtamhc ?? null,
+        },
         note: ''
       };
 
