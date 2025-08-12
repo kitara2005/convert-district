@@ -1,0 +1,17 @@
+{
+  "name": "convert-district",
+  "private": true,
+  "version": "0.1.0",
+  "type": "commonjs",
+  "scripts": {
+    "build:data": "node scripts/build-all.js",
+    "serve": "http-server ./ -p 5173 -a 127.0.0.1 -c-1"
+  },
+  "dependencies": {
+  },
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  }
+}
+
+
