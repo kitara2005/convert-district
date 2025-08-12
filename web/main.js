@@ -1,7 +1,7 @@
 const app = document.getElementById('app');
 
 app.innerHTML = `
-  <div class="container">
+  <div class="tab-pane fade show active" id="tab-before" role="tabpanel">
     <div class="card">
       <div class="row">
         <div>
@@ -23,6 +23,23 @@ app.innerHTML = `
       <div class="results" id="results"></div>
     </div>
   </div>
+  <div class="tab-pane fade" id="tab-after" role="tabpanel">
+    <div class="card">
+      <div class="row">
+        <div>
+          <label>Tỉnh/Thành (mới)</label>
+          <input id="newProvSearch" placeholder="Tìm tỉnh không dấu..." />
+          <select id="newProv"></select>
+        </div>
+        <div>
+          <label>Phường/Xã (mới)</label>
+          <input id="newWardSearch" placeholder="Tìm phường/xã không dấu..." disabled />
+          <select id="newWard" disabled></select>
+        </div>
+      </div>
+      <div class="results" id="revResults"></div>
+    </div>
+  </div>
 `;
 
 const $prov = document.getElementById('prov');
@@ -32,6 +49,12 @@ const $distSearch = document.getElementById('distSearch');
 const $ward = document.getElementById('ward');
 const $wardSearch = document.getElementById('wardSearch');
 const $results = document.getElementById('results');
+// After-merge elements
+const $newProv = document.getElementById('newProv');
+const $newProvSearch = document.getElementById('newProvSearch');
+const $newWard = document.getElementById('newWard');
+const $newWardSearch = document.getElementById('newWardSearch');
+const $revResults = document.getElementById('revResults');
 
 const cache = new Map();
 
@@ -154,6 +177,8 @@ function attachSearch(inputEl, selectEl, key){
     if (key==='prov') renderOptions(selectEl, filtered, p=>p.code, p=>p.name, '-- Chọn tỉnh --');
     if (key==='dist') renderOptions(selectEl, filtered, x=>x.key, x=>x.name, '-- Chọn quận/huyện --');
     if (key==='ward') renderOptions(selectEl, filtered, x=>x.key, x=>x.name, '-- Chọn phường/xã --');
+    if (key==='newProv') renderOptions(selectEl, filtered, p=>p.code, p=>p.name, '-- Chọn tỉnh (mới) --');
+    if (key==='newWard') renderOptions(selectEl, filtered, x=>x.code, x=>x.name, '-- Chọn phường/xã (mới) --');
   });
 }
 
@@ -165,5 +190,45 @@ loadProvinces();
 attachSearch($provSearch, $prov, 'prov');
 attachSearch($distSearch, $dist, 'dist');
 attachSearch($wardSearch, $ward, 'ward');
+
+// After-merge tab logic
+async function loadProvincesNew(){
+  const provinces = await fetchJson('data/provincesNew.json');
+  $newProv.dataset.json = JSON.stringify(provinces);
+  renderOptions($newProv, provinces, p=>p.code, p=>p.name, '-- Chọn tỉnh (mới) --');
+}
+
+async function loadNewWards(newProvCode){
+  $newWard.disabled = !newProvCode; $newWard.innerHTML=''; $revResults.innerHTML='';
+  if (!newProvCode) return;
+  const wards = await fetchJson(`data/new-wards-${newProvCode}.json`);
+  $newWard.dataset.json = JSON.stringify(wards);
+  $newWardSearch.disabled = false;
+  renderOptions($newWard, wards, x=>x.code, x=>x.name, '-- Chọn phường/xã (mới) --');
+}
+
+async function showReverse(newWardCode){
+  $revResults.innerHTML='';
+  if (!newWardCode) return;
+  const newProvCode = $newProv.value;
+  const rev = await fetchJson(`data/rev-${newProvCode}.json`).catch(()=>({}));
+  const olds = rev[newWardCode] || [];
+  if (olds.length===0){
+    $revResults.innerHTML = '<div class="muted">Chưa có dữ liệu ánh xạ ngược cho đơn vị này.</div>';
+    return;
+  }
+  $revResults.innerHTML = olds.map(o=>{
+    return `
+      <div class="result">
+        <div><strong>Đơn vị cũ:</strong> ${o.oldName} (key: ${o.oldKey})</div>
+        <div class="muted">Huyện/TX/Quận cũ: ${o.oldDistrictKey} • Mã tỉnh cũ: ${o.oldProvinceCode}</div>
+      </div>
+    `
+  }).join('');
+}
+
+loadProvincesNew();
+$newProv.addEventListener('change', (e)=> loadNewWards(e.target.value));
+$newWard.addEventListener('change', (e)=> showReverse(e.target.value));
 
 
