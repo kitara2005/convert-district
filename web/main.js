@@ -212,23 +212,71 @@ async function showReverse(newWardCode){
   $revResults.innerHTML='';
   if (!newWardCode) return;
   const newProvCode = $newProv.value;
-  const rev = await fetchJson(`data/rev-${newProvCode}.json`).catch(()=>({}));
-  let olds = rev[newWardCode] || [];
-  if (olds.length===0){
-    olds = await reverseFallback(newProvCode, newWardCode).catch(()=>[]);
-  }
-  if (olds.length===0){
-    $revResults.innerHTML = '<div class="muted">Chưa có dữ liệu ánh xạ ngược cho đơn vị này.</div>';
+  // Simplified: use truocsapnhap as old wards string; determine old province from merges + excelData
+  const [sourcesMap, newToOld, provincesOld] = await Promise.all([
+    fetchJson(`data/new-sources-${newProvCode}.json`).catch(()=>({})),
+    fetchJson('data/new-to-old-provs.json').catch(()=>({})),
+    fetchJson('data/provincesOld.json').catch(()=>[])
+  ]);
+  const src = sourcesMap[newWardCode];
+  if (!src){
+    $revResults.innerHTML = '<div class="muted">Chưa có dữ liệu trước sáp nhập cho đơn vị này.</div>';
     return;
   }
-  $revResults.innerHTML = olds.map(o=>{
-    return `
-      <div class="result">
-        <div><strong>${o.oldWardType?o.oldWardType.charAt(0).toUpperCase()+o.oldWardType.slice(1):'Đơn vị cũ'}:</strong> ${o.oldName} (mã PX: ${o.oldWardCode || '-'})</div>
-        <div class="muted">Huyện/TX/Quận cũ: ${o.oldDistrictName || o.oldDistrictKey} • Tỉnh/Thành cũ: ${o.oldProvinceName || o.oldProvinceCode}</div>
-      </div>
-    `
-  }).join('');
+  const oldsProvCodes = newToOld[String(newProvCode)] || [];
+  const bestOld = await computeBestOldProvince(newProvCode, oldsProvCodes, src);
+  const oldProvName = (provincesOld.find(p=> String(p.code)===String(bestOld))||{}).name || bestOld || '';
+  $revResults.innerHTML = `
+    <div class="result">
+      <div><strong>Tỉnh/Thành (cũ):</strong> ${oldProvName}${bestOld?` (mã: ${bestOld})`:''}</div>
+      <div><strong>Phường/Xã (cũ):</strong> ${src}</div>
+    </div>
+  `;
+}
+
+async function computeBestOldProvince(newProvCode, candidateOldProvCodes, sourcesText){
+  if (!Array.isArray(candidateOldProvCodes) || candidateOldProvCodes.length===0){
+    return newProvCode;
+  }
+  const entries = parseSourcesClient(sourcesText);
+  let bestCode = candidateOldProvCodes[0];
+  let bestScore = -1;
+  for (const oc of candidateOldProvCodes){
+    const [wards, dists] = await Promise.all([
+      fetchJson(`data/wardsOld-${oc}.json`).catch(()=>[]),
+      fetchJson(`data/districtsOld-${oc}.json`).catch(()=>[])
+    ]);
+    const byNameKey = new Map();
+    for (const w of wards){
+      const arr = byNameKey.get(w.nameKey) || []; arr.push(w); byNameKey.set(w.nameKey, arr);
+    }
+    const distNameKeyToKeys = new Map();
+    for (const d of dists){
+      const k = stripDistrictPrefixClient(d.name);
+      const arr = distNameKeyToKeys.get(k) || []; arr.push(d.key); distNameKeyToKeys.set(k, arr);
+    }
+    let score = 0;
+    for (const s of entries){
+      const keyName = stripAdminPrefixClient(s.name);
+      let candidates = byNameKey.get(keyName) || [];
+      if (s.parentDistrictName){
+        const parentKey = stripDistrictPrefixClient(s.parentDistrictName);
+        const keys = distNameKeyToKeys.get(parentKey) || [];
+        if (keys.length>0){
+          const set = new Set(keys);
+          candidates = candidates.filter(w=> set.has(w.districtKey));
+        } else {
+          candidates = [];
+        }
+      }
+      if (candidates.length>0) score += 1;
+    }
+    if (score > bestScore){
+      bestScore = score;
+      bestCode = oc;
+    }
+  }
+  return bestCode;
 }
 
 function stripAdminPrefixClient(name){
