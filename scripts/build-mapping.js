@@ -110,6 +110,7 @@ function main() {
   const newToOldCodes = new Map();   // newNameKey -> Set(oldCodes)
   const provMetaByCode = new Map();  // newCode -> {dientichkm2, dansonguoi, trungtamhc, con}
   const newWardsByProv = new Map();  // newCode -> Map(wardCode -> unit)
+  const newSourcesByProv = new Map(); // newCode -> Map(wardCode -> truocsapnhap)
   for (const pr of provinceMergeRaw) {
     const newName = pr.tentinh;
     const newCode = String(pr.mahc);
@@ -188,9 +189,11 @@ function main() {
   }
 
   for (const rec of api) {
-    const newNameKey = normalizeProvinceName(rec.province.name);
+    // Treat each row as a new unit (flat rawApiData row)
+    const provName = rec.tentinh || rec['3'];
+    const newNameKey = normalizeProvinceName(provName || '');
     // New province info from province merges (authoritative)
-    const newProvInfo = newProvByNameKey.get(newNameKey) || { code: String(rec.province.matinh), name: rec.province.name };
+    const newProvInfo = newProvByNameKey.get(newNameKey) || { code: String(rec.matinh || rec['1']), name: provName };
     // Set of old province codes that merged into this new province (including itself)
     const allowedOldCodes = Array.from(newToOldCodes.get(newNameKey) || []);
     if (allowedOldCodes.length === 0) {
@@ -200,27 +203,27 @@ function main() {
     const oldIndexes = allowedOldCodes.map(code => ({ code, idx: (()=>{ try {return getOldIndex(code);} catch {return null;} })() })).filter(x => x.idx);
     if (oldIndexes.length === 0) continue;
 
-    const districts = rec.districts || [];
-    for (const unit of districts) {
-      const loai = unit.loai;
-      const tenhc = unit.tenhc;
-      const maNew = unit.ma;
-      let truoc = unit.truocsapnhap;
+    const unit = rec;
+    const loai = unit.loai || unit['4'];
+    const tenhc = unit.tenhc || unit['5'];
+    const maNew = unit.ma || unit['2'];
+    let truoc = unit.truocsapnhap || unit['12'];
+    if (!maNew || !tenhc || !loai) continue;
+    if (!truoc) {
+      // Try recover from flat index by (matinh|ma), fallback by (prov|loai|name)
+      const viaCode = flatByProvWardCode.get(`${String(newProvInfo.code)}|${String(maNew)}`);
+      if (viaCode && viaCode.truocsapnhap) truoc = viaCode.truocsapnhap;
       if (!truoc) {
-        // Try recover from flat index by (matinh|ma), fallback by (prov|loai|name)
-        const viaCode = flatByProvWardCode.get(`${String(newProvInfo.code)}|${String(maNew)}`);
-        if (viaCode && viaCode.truocsapnhap) truoc = viaCode.truocsapnhap;
-        if (!truoc) {
-          const key = `${normalizeProvinceName(newProvInfo.name)}|${normalizeVietnamese(loai||'')}|${stripAdminPrefix(tenhc||'')}`;
-          const viaName = flatByNameType.get(key);
-          if (viaName && viaName.truocsapnhap) truoc = viaName.truocsapnhap;
-        }
+        const key = `${normalizeProvinceName(newProvInfo.name)}|${normalizeVietnamese(loai||'')}|${stripAdminPrefix(tenhc||'')}`;
+        const viaName = flatByNameType.get(key);
+        if (viaName && viaName.truocsapnhap) truoc = viaName.truocsapnhap;
       }
-      if (!truoc) continue;
+    }
+    if (!truoc) continue;
 
       const sources = parseSources(truoc);
-      // Track what old ward keys have already been assigned within this unit
-      const assignedInThisUnit = new Set();
+    // Track what old ward keys have already been assigned within this unit
+    const assignedInThisUnit = new Set();
       const target = {
         provinceNew: { code: String(newProvInfo.code), name: newProvInfo.name },
         provinceStats: provMetaByCode.get(String(newProvInfo.code)) || null,
@@ -233,21 +236,25 @@ function main() {
         note: ''
       };
 
-      // Collect catalog of new wards per province
-      const col = newWardsByProv.get(String(newProvInfo.code)) || new Map();
-      if (!col.has(maNew)) {
-        let districtCode = null;
-        if (typeof unit.cay === 'string') {
-          const parts = unit.cay.split('.');
-          districtCode = parts.length >= 1 ? parts[0] : null;
-        }
-        col.set(maNew, { code: maNew, type: loai, name: tenhc, districtCode });
-        newWardsByProv.set(String(newProvInfo.code), col);
+    // Collect catalog of new wards per province
+    const col = newWardsByProv.get(String(newProvInfo.code)) || new Map();
+    if (!col.has(maNew)) {
+      let districtCode = null;
+      if (typeof unit.cay === 'string') {
+        const parts = unit.cay.split('.');
+        districtCode = parts.length >= 1 ? parts[0] : null;
       }
+      col.set(maNew, { code: maNew, type: loai, name: tenhc, districtCode });
+      newWardsByProv.set(String(newProvInfo.code), col);
+      // record source string for fallback
+      const srcMap = newSourcesByProv.get(String(newProvInfo.code)) || new Map();
+      if (truoc) srcMap.set(maNew, String(truoc));
+      newSourcesByProv.set(String(newProvInfo.code), srcMap);
+    }
 
-      for (const s of sources) {
+    for (const s of sources) {
         const keyName = stripAdminPrefix(s.name);
-        for (const { code: oc, idx } of oldIndexes) {
+      for (const { code: oc, idx } of oldIndexes) {
           let candidates = idx.wardsByName.get(keyName) || [];
           let parentMatched = false;
           if (s.parentDistrictName) {
@@ -277,8 +284,8 @@ function main() {
             const fb = excelIndexByProv.get(String(oc))?.get(keyName) || [];
             candidates = fb;
           }
-          if (candidates.length === 0) continue;
-          for (const oldWard of candidates) {
+        if (candidates.length === 0) continue;
+        for (const oldWard of candidates) {
             if (assignedInThisUnit.has(oldWard.key)) continue;
             const outMap = getOutMap(String(oc));
             const prev = outMap.get(oldWard.key);
@@ -311,11 +318,57 @@ function main() {
               oldProvinceName,
               note: s.isPartial ? 'phần còn lại' : ''
             });
-            rev.set(maNew, list);
-            assignedInThisUnit.add(oldWard.key);
+          rev.set(maNew, list);
+          assignedInThisUnit.add(oldWard.key);
+        }
+      }
+    }
+  }
+
+  // Post-process: ensure reverse entries exist for all new wards using excel-only fallback if needed
+  for (const [newProvCode, wardsMap] of newWardsByProv.entries()) {
+    const rev = getRevMap(String(newProvCode));
+    // allowed old province codes for this new province
+    const newName = (Array.from(newProvByNameKey.values()).find(v => String(v.code) === String(newProvCode)) || {}).name || '';
+    const newKey = normalizeProvinceName(newName);
+    const allowedOldCodes = Array.from(newToOldCodes.get(newKey) || []);
+    for (const [wardCode, w] of wardsMap.entries()) {
+      if (rev.has(wardCode)) continue;
+      const rec = flatByProvWardCode.get(`${String(newProvCode)}|${String(wardCode)}`);
+      const truoc = rec?.truocsapnhap || rec?.['12'];
+      if (!truoc) continue;
+      const sources = parseSources(truoc);
+      const list = [];
+      for (const oc of allowedOldCodes) {
+        const excelMap = excelIndexByProv.get(String(oc));
+        if (!excelMap) continue;
+        for (const s of sources) {
+          const keyName = stripAdminPrefix(s.name);
+          const arr = excelMap.get(keyName) || [];
+          for (const oldWard of arr) {
+            // resolve names
+            let oldDistrictName = null;
+            try {
+              const idx = getOldIndex(String(oc));
+              const drec = idx.districts.find(d => d.key === oldWard.districtKey);
+              if (drec) oldDistrictName = drec.name;
+            } catch {}
+            const oldProvinceName = oldProvNameByCode.get(String(oc)) || '';
+            list.push({
+              oldKey: oldWard.key,
+              oldWardCode: oldWard.code,
+              oldWardType: null,
+              oldName: oldWard.name,
+              oldDistrictKey: oldWard.districtKey,
+              oldDistrictName,
+              oldProvinceCode: String(oc),
+              oldProvinceName,
+              note: s.isPartial ? 'phần còn lại' : ''
+            });
           }
         }
       }
+      if (list.length > 0) rev.set(wardCode, list);
     }
   }
 
@@ -376,6 +429,21 @@ function main() {
     const list = Array.from(col.values()).sort((a,b)=>a.name.localeCompare(b.name, 'vi'));
     fs.writeFileSync(path.join(OUT_DIR, `new-wards-${newCode}.json`), JSON.stringify(list));
   }
+
+  // Serialize sources per NEW province for client fallback
+  for (const [newCode, srcMap] of newSourcesByProv.entries()) {
+    const obj = {};
+    for (const [k, v] of srcMap.entries()) obj[k] = v;
+    fs.writeFileSync(path.join(OUT_DIR, `new-sources-${newCode}.json`), JSON.stringify(obj));
+  }
+
+  // Serialize new->old provinces mapping for client fallback
+  const newToOldOut = {};
+  for (const [newKey, info] of newProvByNameKey.entries()) {
+    const olds = Array.from(newToOldCodes.get(newKey) || []);
+    newToOldOut[String(info.code)] = olds;
+  }
+  fs.writeFileSync(path.join(OUT_DIR, 'new-to-old-provs.json'), JSON.stringify(newToOldOut));
 
   // Overrides disabled per user request (manual list kept for reference but not applied)
 
