@@ -98,13 +98,14 @@
           function apply(){ zImg.style.transform = `translate(${originX}px, ${originY}px) scale(${scale})`; }
           modal.querySelector('#zoomIn').onclick = ()=>{ scale = Math.min(5, scale*1.2); apply(); };
           modal.querySelector('#zoomOut').onclick = ()=>{ scale = Math.max(1, scale/1.2); if (scale===1){ originX=0; originY=0; } apply(); };
-          zImg.addEventListener('mousedown', (e)=>{ dragging=true; zImg.classList.add('dragging'); startX=e.clientX-originX; startY=e.clientY-originY; });
+          zImg.addEventListener('mousedown', (e)=>{ if (scale<=1) return; dragging=true; zImg.classList.add('dragging'); startX=e.clientX-originX; startY=e.clientY-originY; });
           window.addEventListener('mousemove', (e)=>{ if(!dragging) return; originX=e.clientX-startX; originY=e.clientY-startY; apply(); });
           window.addEventListener('mouseup', ()=>{ dragging=false; zImg.classList.remove('dragging'); });
           // Wheel/trackpad zoom (pinch on macOS sends wheel with ctrlKey)
           function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
           wrap.addEventListener('wheel', (e)=>{
-            // Treat as zoom when ctrlKey (pinch-zoom gesture) or always within modal
+            // Only zoom on pinch-gesture (ctrlKey on macOS) to avoid accidental image move while scrolling
+            if (!(e.ctrlKey)) return;
             e.preventDefault();
             const rect = wrap.getBoundingClientRect();
             const cx = e.clientX - rect.left;
@@ -122,7 +123,7 @@
           }, { passive: false });
 
           // Touch support (one-finger pan, two-finger pinch zoom)
-          zImg.addEventListener('touchstart', (e)=>{ if(e.touches.length===1){ dragging=true; const t=e.touches[0]; startX=t.clientX-originX; startY=t.clientY-originY; } }, {passive:true});
+          zImg.addEventListener('touchstart', (e)=>{ if(e.touches.length===1 && scale>1){ dragging=true; const t=e.touches[0]; startX=t.clientX-originX; startY=t.clientY-originY; } }, {passive:true});
           zImg.addEventListener('touchmove', (e)=>{ if(!dragging||e.touches.length!==1) return; const t=e.touches[0]; originX=t.clientX-startX; originY=t.clientY-startY; apply(); }, {passive:true});
           zImg.addEventListener('touchend', ()=>{ dragging=false; });
           let pinch = { active:false, startDist:0, startScale:1, cx:0, cy:0 };
