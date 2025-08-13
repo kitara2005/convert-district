@@ -213,7 +213,10 @@ async function showReverse(newWardCode){
   if (!newWardCode) return;
   const newProvCode = $newProv.value;
   const rev = await fetchJson(`data/rev-${newProvCode}.json`).catch(()=>({}));
-  const olds = rev[newWardCode] || [];
+  let olds = rev[newWardCode] || [];
+  if (olds.length===0){
+    olds = await reverseFallback(newProvCode, newWardCode).catch(()=>[]);
+  }
   if (olds.length===0){
     $revResults.innerHTML = '<div class="muted">Chưa có dữ liệu ánh xạ ngược cho đơn vị này.</div>';
     return;
@@ -226,6 +229,92 @@ async function showReverse(newWardCode){
       </div>
     `
   }).join('');
+}
+
+function stripAdminPrefixClient(name){
+  const n = normalizeVN(name||'');
+  return n.replace(/^(phuong|xa|thi tran)\s+/, '').trim();
+}
+
+function parseSourcesClient(text){
+  if (!text) return [];
+  const cleaned = String(text).replace(/\n/g,' ').replace(/\s+/g,' ').trim();
+  const parts = cleaned.split(/,\s*/);
+  const out = [];
+  for (let p of parts){
+    p = p.trim(); if (!p) continue;
+    const isPartial = /phần còn lại/i.test(p);
+    let name = p, parentDistrictName = null;
+    const m = p.match(/^(.*?)\s*\(([^)]+)\)\s*$/);
+    if (m){ name = m[1]; parentDistrictName = m[2]; }
+    out.push({ raw: p, name, parentDistrictName, isPartial });
+  }
+  return out;
+}
+
+async function reverseFallback(newProvCode, newWardCode){
+  const [sourcesMap, newToOld] = await Promise.all([
+    fetchJson(`data/new-sources-${newProvCode}.json`).catch(()=>({})),
+    fetchJson('data/new-to-old-provs.json').catch(()=>({}))
+  ]);
+  const src = sourcesMap[newWardCode];
+  if (!src) return [];
+  const oldsProvCodes = newToOld[String(newProvCode)] || [];
+  if (!Array.isArray(oldsProvCodes) || oldsProvCodes.length===0) return [];
+  const provincesOld = await fetchJson('data/provincesOld.json').catch(()=>[]);
+  const provNameByCode = new Map((provincesOld||[]).map(p=>[String(p.code), p.name]));
+  const entries = parseSourcesClient(src);
+  const results = [];
+  for (const oc of oldsProvCodes){
+    const [wards, dists] = await Promise.all([
+      fetchJson(`data/wardsOld-${oc}.json`).catch(()=>[]),
+      fetchJson(`data/districtsOld-${oc}.json`).catch(()=>[])
+    ]);
+    const distNameKeyToKeys = new Map();
+    for (const d of dists){
+      const k = normalizeVN(d.name).replace(/^(quan|huyen|thi xa|thanh pho|thu do|tp)\s+/, '').trim();
+      const arr = distNameKeyToKeys.get(k) || []; arr.push(d.key); distNameKeyToKeys.set(k, arr);
+    }
+    for (const s of entries){
+      const keyName = stripAdminPrefixClient(s.name);
+      let candidates = wards.filter(w=> (w.nameKey===keyName));
+      let parentMatched = false;
+      if (s.parentDistrictName){
+        const parentKey = normalizeVN(s.parentDistrictName);
+        const keys = distNameKeyToKeys.get(parentKey) || [];
+        if (keys.length>0){
+          const set = new Set(keys);
+          const filtered = candidates.filter(w=> set.has(w.districtKey));
+          if (filtered.length>0){ candidates = filtered; parentMatched = true; } else { candidates = []; }
+        } else {
+          candidates = [];
+        }
+      }
+      if (candidates.length===0 && s.isPartial && s.parentDistrictName){
+        const parentKey = normalizeVN(s.parentDistrictName);
+        const keys = distNameKeyToKeys.get(parentKey) || [];
+        if (keys.length>0){
+          const set = new Set(keys);
+          candidates = wards.filter(w=> set.has(w.districtKey));
+          parentMatched = true;
+        }
+      }
+      for (const w of candidates){
+        results.push({
+          oldKey: w.key,
+          oldWardCode: w.code,
+          oldWardType: null,
+          oldName: w.name,
+          oldDistrictKey: w.districtKey,
+          oldDistrictName: (dists.find(d=>d.key===w.districtKey)||{}).name || null,
+          oldProvinceCode: String(oc),
+          oldProvinceName: provNameByCode.get(String(oc)) || '',
+          note: s.isPartial ? 'phần còn lại' : ''
+        });
+      }
+    }
+  }
+  return results;
 }
 
 loadProvincesNew();
