@@ -40,15 +40,32 @@
       <section class="card mt-4" aria-labelledby="map-title">
         <h2 id="map-title" class="h5 mb-3">Bản đồ Việt Nam sau sáp nhập</h2>
         <figure class="vn-map">
-          <img
+          <img id="vn-map-img"
             src="https://upload.wikimedia.org/wikipedia/commons/thumb/9/9f/Vietnam_location_map.svg/800px-Vietnam_location_map.svg.png"
             alt="Bản đồ Việt Nam sau sáp nhập"
+            referrerpolicy="no-referrer"
+            crossorigin="anonymous"
             loading="lazy"
           />
           <figcaption class="muted small mt-2">Nguồn: Wikimedia Commons (có thể thay thế bằng bản đồ hành chính sau sáp nhập khi có)</figcaption>
         </figure>
       </section>
     </main>
+    <script>
+      (function(){
+        const img = document.getElementById('vn-map-img');
+        if (!img) return;
+        const fallback = "data:image/svg+xml;utf8,\
+<svg xmlns='http://www.w3.org/2000/svg' width='1024' height='512'>\
+  <defs><linearGradient id='g' x1='0' y1='0' x2='0' y2='1'>\
+    <stop offset='0%' stop-color='%23eef3ff'/><stop offset='100%' stop-color='%23ffffff'/>\
+  </linearGradient></defs>\
+  <rect fill='url(%23g)' width='100%' height='100%'/>\
+  <text x='50%' y='50%' text-anchor='middle' dominant-baseline='middle' fill='%237a88aa' font-size='24' font-family='Arial, sans-serif'>Bản đồ đang cập nhật</text>\
+</svg>";
+        img.addEventListener('error', ()=>{ img.src=fallback; });
+      })();
+    </script>
     <footer class="footer">
       <div class="container">
         <span class="text-muted small">© 2025 Chuyển đổi ĐVHC</span>
