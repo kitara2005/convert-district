@@ -174,6 +174,19 @@ function main() {
     return m;
   }
 
+  // Build flat index of rawApiData rows to recover truocsapnhap when missing on aggregated "unit" entries
+  const flatByProvWardCode = new Map(); // key: `${matinh}|${ma}` -> rec
+  const flatByNameType = new Map();     // key: `${provKey}|${normalize(loai)}|${nameKey}` -> rec
+  for (const r of api) {
+    const matinh = r.matinh != null ? String(r.matinh) : null;
+    const ma = r.ma != null ? String(r.ma) : null;
+    const provKey = normalizeProvinceName(r.tentinh || r.province?.name || '');
+    const loai = r.loai ? normalizeVietnamese(r.loai) : '';
+    const nameKey = stripAdminPrefix(r.tenhc || '');
+    if (matinh && ma) flatByProvWardCode.set(`${matinh}|${ma}`, r);
+    if (provKey && loai && nameKey) flatByNameType.set(`${provKey}|${loai}|${nameKey}`, r);
+  }
+
   for (const rec of api) {
     const newNameKey = normalizeProvinceName(rec.province.name);
     // New province info from province merges (authoritative)
@@ -192,7 +205,17 @@ function main() {
       const loai = unit.loai;
       const tenhc = unit.tenhc;
       const maNew = unit.ma;
-      const truoc = unit.truocsapnhap;
+      let truoc = unit.truocsapnhap;
+      if (!truoc) {
+        // Try recover from flat index by (matinh|ma), fallback by (prov|loai|name)
+        const viaCode = flatByProvWardCode.get(`${String(newProvInfo.code)}|${String(maNew)}`);
+        if (viaCode && viaCode.truocsapnhap) truoc = viaCode.truocsapnhap;
+        if (!truoc) {
+          const key = `${normalizeProvinceName(newProvInfo.name)}|${normalizeVietnamese(loai||'')}|${stripAdminPrefix(tenhc||'')}`;
+          const viaName = flatByNameType.get(key);
+          if (viaName && viaName.truocsapnhap) truoc = viaName.truocsapnhap;
+        }
+      }
       if (!truoc) continue;
 
       const sources = parseSources(truoc);
