@@ -44,6 +44,7 @@
             src="assets/vietnam-map.jpg"
             alt="Bản đồ Việt Nam sau sáp nhập"
             loading="lazy"
+            style="cursor: zoom-in;"
           />
           <figcaption class="muted small mt-2">Nguồn: Cổng Thông tin điện tử Chính phủ — Bản đồ Việt Nam sau sáp nhập. [Xem ảnh gốc](https://bcp.cdnchinhphu.vn/334894974524682240/2025/7/8/bando1-1751971593268258350991.jpg)</figcaption>
         </figure>
@@ -62,6 +63,49 @@
   <text x='50%' y='50%' text-anchor='middle' dominant-baseline='middle' fill='%237a88aa' font-size='24' font-family='Arial, sans-serif'>Bản đồ đang cập nhật</text>\
 </svg>";
         img.addEventListener('error', ()=>{ img.src=fallback; });
+
+        // Click to open zoom modal
+        img.addEventListener('click', ()=>{
+          openZoom('/assets/vietnam-map.jpg');
+        });
+
+        function openZoom(src){
+          const modal = document.createElement('div');
+          modal.className = 'modal fade';
+          modal.tabIndex = -1;
+          modal.innerHTML = `
+            <div class="modal-dialog modal-fullscreen">
+              <div class="modal-content">
+                <div class="modal-body p-0">
+                  <div class="zoom-wrap" id="zoomWrap">
+                    <img id="zoomImg" src="${src}" alt="Bản đồ Việt Nam sau sáp nhập" />
+                    <div class="zoom-tools">
+                      <button type="button" class="btn btn-light border" id="zoomIn">+</button>
+                      <button type="button" class="btn btn-light border" id="zoomOut">−</button>
+                      <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Đóng</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>`;
+          document.body.appendChild(modal);
+          const bsModal = new bootstrap.Modal(modal);
+          bsModal.show();
+          let scale = 1, originX = 0, originY = 0, dragging = false, startX=0, startY=0;
+          const zImg = modal.querySelector('#zoomImg');
+          const wrap = modal.querySelector('#zoomWrap');
+          function apply(){ zImg.style.transform = `translate(${originX}px, ${originY}px) scale(${scale})`; }
+          modal.querySelector('#zoomIn').onclick = ()=>{ scale = Math.min(5, scale*1.2); apply(); };
+          modal.querySelector('#zoomOut').onclick = ()=>{ scale = Math.max(1, scale/1.2); if (scale===1){ originX=0; originY=0; } apply(); };
+          zImg.addEventListener('mousedown', (e)=>{ dragging=true; zImg.classList.add('dragging'); startX=e.clientX-originX; startY=e.clientY-originY; });
+          window.addEventListener('mousemove', (e)=>{ if(!dragging) return; originX=e.clientX-startX; originY=e.clientY-startY; apply(); });
+          window.addEventListener('mouseup', ()=>{ dragging=false; zImg.classList.remove('dragging'); });
+          // Touch support
+          zImg.addEventListener('touchstart', (e)=>{ if(e.touches.length===1){ dragging=true; const t=e.touches[0]; startX=t.clientX-originX; startY=t.clientY-originY; } }, {passive:true});
+          zImg.addEventListener('touchmove', (e)=>{ if(!dragging||e.touches.length!==1) return; const t=e.touches[0]; originX=t.clientX-startX; originY=t.clientY-startY; apply(); }, {passive:true});
+          zImg.addEventListener('touchend', ()=>{ dragging=false; });
+          modal.addEventListener('hidden.bs.modal', ()=>{ bsModal.dispose(); modal.remove(); });
+        }
       })();
     </script>
     <footer class="footer">
