@@ -267,15 +267,15 @@ async function computeBestOldProvince(newProvCode, candidateOldProvCodes, source
     }
     const distNameKeyToKeys = new Map();
     for (const d of dists){
-      const k = stripDistrictPrefixClient(d.name);
+      const k = normalizeKey(d.name);
       const arr = distNameKeyToKeys.get(k) || []; arr.push(d.key); distNameKeyToKeys.set(k, arr);
     }
     let score = 0;
     for (const s of entries){
-      const keyName = stripAdminPrefixClient(s.name);
+      const keyName = normalizeKey(s.name);
       let candidates = byNameKey.get(keyName) || [];
       if (s.parentDistrictName){
-        const parentKey = stripDistrictPrefixClient(s.parentDistrictName);
+        const parentKey = normalizeKey(s.parentDistrictName);
         const keys = distNameKeyToKeys.get(parentKey) || [];
         if (keys.length>0){
           const set = new Set(keys);
@@ -305,16 +305,16 @@ async function computeBestOldProvinceByIndexes(sourcesText){
   for (const s of entries){
     const raw = normalizeKey(s.name);
     if (/^(quan|huyen|thi xa|thanh pho|thu do|tp)\s+/.test(raw)){
-      const dKey = stripDistrictPrefixClient(s.name);
+      const dKey = normalizeKey(s.name);
       const arr = distIdx[dKey] || [];
       for (const it of arr) inc(String(it.provinceCode));
       continue;
     }
-    const wKey = stripAdminPrefixClient(s.name);
+    const wKey = normalizeKey(s.name);
     const arr = wardIdx[wKey] || [];
     let allowedProv = null;
     if (s.parentDistrictName){
-      const parentKey = stripDistrictPrefixClient(s.parentDistrictName);
+      const parentKey = normalizeKey(s.parentDistrictName);
       const dArr = distIdx[parentKey] || [];
       allowedProv = new Set(dArr.map(it=>String(it.provinceCode)));
     }
