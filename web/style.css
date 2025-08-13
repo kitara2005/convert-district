@@ -5,9 +5,10 @@ h1 { font-size: 22px; margin: 0 0 8px; letter-spacing: -0.2px; }
 .card { background: #ffffff; border: 1px solid #e7ecf5; border-radius: 16px; padding: 24px; box-shadow: 0 10px 26px rgba(31,42,68,0.08); }
 .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 14px; align-items: end; }
 label { display: block; font-size: 12px; color: #576485; margin-bottom: 6px; font-weight: 600; }
-select, input { width: 100%; padding: 12px 14px; border-radius: 10px; border: 1px solid #d6deea; background: #ffffff; color: #1f2a44; transition: box-shadow .15s ease, border-color .15s ease; height: 44px; }
+select, input { width: 100%; padding: 12px 14px; border-radius: 10px; border: 1px solid #d6deea; background: #ffffff; color: #1f2a44; transition: box-shadow .15s ease, border-color .15s ease; height: 48px; line-height: 1.25; }
 select:focus, input:focus { outline: none; border-color: #94b8ff; box-shadow: 0 0 0 3px rgba(59,130,246,0.18); }
 .row input { margin-bottom: 6px; }
+select { appearance: none; -webkit-appearance: none; -moz-appearance: none; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='7'><path d='M1 1l4 4 4-4' stroke='%23576485' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 34px; }
 .results { margin-top: 18px; display: grid; gap: 10px; }
 .result { padding: 14px; border: 1px solid #e7ecf5; border-radius: 10px; background: #ffffff; box-shadow: 0 3px 10px rgba(31,42,68,0.05); }
 .badge { display: inline-block; font-size: 11px; padding: 3px 10px; border-radius: 999px; background: #eaf2ff; color: #2b6ee7; margin-left: 8px; border: 1px solid #d6e6ff; }
