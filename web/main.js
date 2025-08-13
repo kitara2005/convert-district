@@ -104,6 +104,12 @@ async function loadWards(districtKey) {
 async function showMapping(oldWardKey) {
   $results.innerHTML = '';
   if (!oldWardKey) return;
+  // show loading spinner while fetching mapping
+  $results.innerHTML = `
+    <div class="d-flex justify-content-center my-3" aria-live="polite" aria-busy="true">
+      <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Đang tải…</span></div>
+    </div>
+  `;
   const provCode = oldWardKey.split('-')[0];
   const mapping = await fetchJson(`data/mapping-${provCode}.json`).catch(() => ({}));
   const targets = mapping[oldWardKey] || [];
@@ -219,6 +225,12 @@ async function loadNewWards(newProvCode){
 async function showReverse(newWardCode){
   $revResults.innerHTML='';
   if (!newWardCode) return;
+  // show loading spinner while fetching reverse mapping
+  $revResults.innerHTML = `
+    <div class="d-flex justify-content-center my-3" aria-live="polite" aria-busy="true">
+      <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Đang tải…</span></div>
+    </div>
+  `;
   const newProvCode = $newProv.value;
   // Simplified: use truocsapnhap as old wards string; determine old province from merges + excelData
   const [sourcesMap, newToOld, provincesOld] = await Promise.all([

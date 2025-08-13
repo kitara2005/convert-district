@@ -104,6 +104,12 @@ async function loadWards(districtKey) {
 async function showMapping(oldWardKey) {
   $results.innerHTML = '';
   if (!oldWardKey) return;
+  // show loading spinner while fetching mapping
+  $results.innerHTML = `
+    <div class="d-flex justify-content-center my-3" aria-live="polite" aria-busy="true">
+      <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Đang tải…</span></div>
+    </div>
+  `;
   const provCode = oldWardKey.split('-')[0];
   const mapping = await fetchJson(`data/mapping-${provCode}.json`).catch(() => ({}));
   const targets = mapping[oldWardKey] || [];
@@ -164,6 +170,14 @@ function normalizeVN(s){
   return s.normalize('NFD').replace(/\p{Diacritic}+/gu,'').toLowerCase();
 }
 
+function normalizeKey(s){
+  return normalizeVN(s||'')
+    .replace(/đ/g,'d')
+    .replace(/[^a-z0-9\s]/g,' ')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+
 function renderOptions(selectEl, items, getVal, getLabel, placeholder){
   const html = ['<option value="">'+placeholder+'</option>'].concat(items.map(it=>`<option value="${getVal(it)}">${getLabel(it)}</option>`));
   selectEl.innerHTML = html.join('');
@@ -211,29 +225,154 @@ async function loadNewWards(newProvCode){
 async function showReverse(newWardCode){
   $revResults.innerHTML='';
   if (!newWardCode) return;
+  // show loading spinner while fetching reverse mapping
+  $revResults.innerHTML = `
+    <div class="d-flex justify-content-center my-3" aria-live="polite" aria-busy="true">
+      <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Đang tải…</span></div>
+    </div>
+  `;
   const newProvCode = $newProv.value;
-  const rev = await fetchJson(`data/rev-${newProvCode}.json`).catch(()=>({}));
-  let olds = rev[newWardCode] || [];
-  if (olds.length===0){
-    olds = await reverseFallback(newProvCode, newWardCode).catch(()=>[]);
-  }
-  if (olds.length===0){
-    $revResults.innerHTML = '<div class="muted">Chưa có dữ liệu ánh xạ ngược cho đơn vị này.</div>';
+  // Simplified: use truocsapnhap as old wards string; determine old province from merges + excelData
+  const [sourcesMap, newToOld, provincesOld] = await Promise.all([
+    fetchJson(`data/new-sources-${newProvCode}.json`).catch(()=>({})),
+    fetchJson('data/new-to-old-provs.json').catch(()=>({})),
+    fetchJson('data/provincesOld.json').catch(()=>[])
+  ]);
+  const src = sourcesMap[newWardCode];
+  if (!src){
+    $revResults.innerHTML = '<div class="muted">Chưa có dữ liệu trước sáp nhập cho đơn vị này.</div>';
     return;
   }
-  $revResults.innerHTML = olds.map(o=>{
-    return `
-      <div class="result">
-        <div><strong>${o.oldWardType?o.oldWardType.charAt(0).toUpperCase()+o.oldWardType.slice(1):'Đơn vị cũ'}:</strong> ${o.oldName} (mã PX: ${o.oldWardCode || '-'})</div>
-        <div class="muted">Huyện/TX/Quận cũ: ${o.oldDistrictName || o.oldDistrictKey} • Tỉnh/Thành cũ: ${o.oldProvinceName || o.oldProvinceCode}</div>
-      </div>
-    `
-  }).join('');
+  const oldsProvCodes = newToOld[String(newProvCode)] || [];
+  const bestOld = await computeBestOldProvince(newProvCode, oldsProvCodes, src);
+  const oldProvName = (provincesOld.find(p=> String(p.code)===String(bestOld))||{}).name || bestOld || '';
+  $revResults.innerHTML = `
+    <div class="result">
+      <div><strong>Tỉnh/Thành (cũ):</strong> ${oldProvName}${bestOld?` (mã: ${bestOld})`:''}</div>
+      <div><strong>Phường/Xã (cũ):</strong> ${src}</div>
+    </div>
+  `;
+}
+
+async function computeBestOldProvince(newProvCode, candidateOldProvCodes, sourcesText){
+  // Expand candidate set by provinces discovered directly from sources via global indexes
+  const discovered = await discoverProvincesByIndexes(sourcesText);
+  const base = Array.isArray(candidateOldProvCodes) ? candidateOldProvCodes.map(String) : [];
+  const unionSet = new Set([ ...base, ...discovered ]);
+  const candidates = Array.from(unionSet);
+  if (candidates.length===0){
+    const byIndex = await computeBestOldProvinceByIndexes(sourcesText);
+    if (byIndex) return byIndex;
+    return newProvCode;
+  }
+  const entries = parseSourcesClient(sourcesText);
+  let bestCode = candidates[0];
+  let bestScore = -1;
+  for (const oc of candidates){
+    const [wards, dists] = await Promise.all([
+      fetchJson(`data/wardsOld-${oc}.json`).catch(()=>[]),
+      fetchJson(`data/districtsOld-${oc}.json`).catch(()=>[])
+    ]);
+    const byNameKey = new Map();
+    for (const w of wards){
+      const arr = byNameKey.get(w.nameKey) || []; arr.push(w); byNameKey.set(w.nameKey, arr);
+    }
+    const distNameKeyToKeys = new Map();
+    for (const d of dists){
+      const k = normalizeKey(d.name);
+      const arr = distNameKeyToKeys.get(k) || []; arr.push(d.key); distNameKeyToKeys.set(k, arr);
+    }
+    let score = 0;
+    for (const s of entries){
+      const keyName = normalizeKey(s.name);
+      let candidates = byNameKey.get(keyName) || [];
+      if (s.parentDistrictName){
+        const parentKey = normalizeKey(s.parentDistrictName);
+        const keys = distNameKeyToKeys.get(parentKey) || [];
+        if (keys.length>0){
+          const set = new Set(keys);
+          candidates = candidates.filter(w=> set.has(w.districtKey));
+        } else {
+          candidates = [];
+        }
+      }
+      if (candidates.length>0) score += 1;
+    }
+    if (score > bestScore){
+      bestScore = score;
+      bestCode = oc;
+    }
+  }
+  return bestCode;
+}
+
+async function computeBestOldProvinceByIndexes(sourcesText){
+  const [wardIdx, distIdx] = await Promise.all([
+    fetchJson('data/ward-index.json').catch(()=>({})),
+    fetchJson('data/district-index.json').catch(()=>({}))
+  ]);
+  const entries = parseSourcesClient(sourcesText);
+  const score = new Map();
+  function inc(p){ score.set(p, (score.get(p)||0)+1); }
+  for (const s of entries){
+    const raw = normalizeKey(s.name);
+    if (/^(quan|huyen|thi xa|thanh pho|thu do|tp)\s+/.test(raw)){
+      const dKey = normalizeKey(s.name);
+      const arr = distIdx[dKey] || [];
+      for (const it of arr) inc(String(it.provinceCode));
+      continue;
+    }
+    const wKey = normalizeKey(s.name);
+    const arr = wardIdx[wKey] || [];
+    let allowedProv = null;
+    if (s.parentDistrictName){
+      const parentKey = normalizeKey(s.parentDistrictName);
+      const dArr = distIdx[parentKey] || [];
+      allowedProv = new Set(dArr.map(it=>String(it.provinceCode)));
+    }
+    for (const it of arr){
+      const p = String(it.provinceCode);
+      if (allowedProv && !allowedProv.has(p)) continue;
+      inc(p);
+    }
+  }
+  let best = null, bestScore = -1;
+  for (const [p, sc] of score.entries()){
+    if (sc > bestScore){ bestScore = sc; best = p; }
+  }
+  return best;
+}
+
+async function discoverProvincesByIndexes(sourcesText){
+  const [wardIdx, distIdx] = await Promise.all([
+    fetchJson('data/ward-index.json').catch(()=>({})),
+    fetchJson('data/district-index.json').catch(()=>({}))
+  ]);
+  const entries = parseSourcesClient(sourcesText);
+  const provs = new Set();
+  for (const s of entries){
+    const raw = normalizeKey(s.name);
+    if (/^(quan|huyen|thi xa|thanh pho|thu do|tp)\s+/.test(raw)){
+      const dKey = stripDistrictPrefixClient(s.name);
+      const arr = distIdx[dKey] || [];
+      for (const it of arr) provs.add(String(it.provinceCode));
+      continue;
+    }
+    const wKey = stripAdminPrefixClient(s.name);
+    const arr = wardIdx[wKey] || [];
+    for (const it of arr) provs.add(String(it.provinceCode));
+  }
+  return Array.from(provs);
 }
 
 function stripAdminPrefixClient(name){
-  const n = normalizeVN(name||'');
+  const n = normalizeKey(name||'');
   return n.replace(/^(phuong|xa|thi tran)\s+/, '').trim();
+}
+
+function stripDistrictPrefixClient(name){
+  const n = normalizeKey(name||'');
+  return n.replace(/^(quan|huyen|thi xa|thanh pho|thu do|tp)\s+/, '').trim();
 }
 
 function parseSourcesClient(text){
@@ -272,7 +411,7 @@ async function reverseFallback(newProvCode, newWardCode){
     ]);
     const distNameKeyToKeys = new Map();
     for (const d of dists){
-      const k = normalizeVN(d.name).replace(/^(quan|huyen|thi xa|thanh pho|thu do|tp)\s+/, '').trim();
+      const k = stripDistrictPrefixClient(d.name);
       const arr = distNameKeyToKeys.get(k) || []; arr.push(d.key); distNameKeyToKeys.set(k, arr);
     }
     for (const s of entries){
@@ -280,7 +419,7 @@ async function reverseFallback(newProvCode, newWardCode){
       let candidates = wards.filter(w=> (w.nameKey===keyName));
       let parentMatched = false;
       if (s.parentDistrictName){
-        const parentKey = normalizeVN(s.parentDistrictName);
+        const parentKey = stripDistrictPrefixClient(s.parentDistrictName);
         const keys = distNameKeyToKeys.get(parentKey) || [];
         if (keys.length>0){
           const set = new Set(keys);
@@ -291,7 +430,7 @@ async function reverseFallback(newProvCode, newWardCode){
         }
       }
       if (candidates.length===0 && s.isPartial && s.parentDistrictName){
-        const parentKey = normalizeVN(s.parentDistrictName);
+        const parentKey = stripDistrictPrefixClient(s.parentDistrictName);
         const keys = distNameKeyToKeys.get(parentKey) || [];
         if (keys.length>0){
           const set = new Set(keys);
