@@ -243,16 +243,20 @@ async function showReverse(newWardCode){
 }
 
 async function computeBestOldProvince(newProvCode, candidateOldProvCodes, sourcesText){
-  if (!Array.isArray(candidateOldProvCodes) || candidateOldProvCodes.length===0){
-    // Fall back to global index across all provinces
+  // Expand candidate set by provinces discovered directly from sources via global indexes
+  const discovered = await discoverProvincesByIndexes(sourcesText);
+  const base = Array.isArray(candidateOldProvCodes) ? candidateOldProvCodes.map(String) : [];
+  const unionSet = new Set([ ...base, ...discovered ]);
+  const candidates = Array.from(unionSet);
+  if (candidates.length===0){
     const byIndex = await computeBestOldProvinceByIndexes(sourcesText);
     if (byIndex) return byIndex;
     return newProvCode;
   }
   const entries = parseSourcesClient(sourcesText);
-  let bestCode = candidateOldProvCodes[0];
+  let bestCode = candidates[0];
   let bestScore = -1;
-  for (const oc of candidateOldProvCodes){
+  for (const oc of candidates){
     const [wards, dists] = await Promise.all([
       fetchJson(`data/wardsOld-${oc}.json`).catch(()=>[]),
       fetchJson(`data/districtsOld-${oc}.json`).catch(()=>[])
@@ -325,6 +329,28 @@ async function computeBestOldProvinceByIndexes(sourcesText){
     if (sc > bestScore){ bestScore = sc; best = p; }
   }
   return best;
+}
+
+async function discoverProvincesByIndexes(sourcesText){
+  const [wardIdx, distIdx] = await Promise.all([
+    fetchJson('data/ward-index.json').catch(()=>({})),
+    fetchJson('data/district-index.json').catch(()=>({}))
+  ]);
+  const entries = parseSourcesClient(sourcesText);
+  const provs = new Set();
+  for (const s of entries){
+    const raw = normalizeKey(s.name);
+    if (/^(quan|huyen|thi xa|thanh pho|thu do|tp)\s+/.test(raw)){
+      const dKey = stripDistrictPrefixClient(s.name);
+      const arr = distIdx[dKey] || [];
+      for (const it of arr) provs.add(String(it.provinceCode));
+      continue;
+    }
+    const wKey = stripAdminPrefixClient(s.name);
+    const arr = wardIdx[wKey] || [];
+    for (const it of arr) provs.add(String(it.provinceCode));
+  }
+  return Array.from(provs);
 }
 
 function stripAdminPrefixClient(name){
