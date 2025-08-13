@@ -78,6 +78,18 @@ function loadOldIndex(provinceCode) {
 function main() {
   ensureDirSync(fs, OUT_DIR);
   const api = JSON.parse(fs.readFileSync(INPUT_API, 'utf8'));
+  // Flatten rawApiData to row-level entries regardless of nesting shape
+  const flatRows = [];
+  (function collectRows(node){
+    if (!node) return;
+    if (Array.isArray(node)) { for (const it of node) collectRows(it); return; }
+    if (typeof node === 'object') {
+      const hasWard = (node.ma != null || node['2'] != null) && (node.tenhc != null || node['5'] != null);
+      const hasProv = (node.tentinh != null || node['3'] != null || node.matinh != null || node['1'] != null);
+      if (hasWard && hasProv) flatRows.push(node);
+      for (const k of Object.keys(node)) collectRows(node[k]);
+    }
+  })(api);
   const excel = JSON.parse(fs.readFileSync(path.resolve(WORKSPACE, 'excelData.json'), 'utf8'));
   const excelRows = Array.isArray(excel?.data) ? excel.data : [];
   const excelIndexByProv = new Map(); // provCode -> Map(nameKey -> array of ward rows)
@@ -178,7 +190,7 @@ function main() {
   // Build flat index of rawApiData rows to recover truocsapnhap when missing on aggregated "unit" entries
   const flatByProvWardCode = new Map(); // key: `${matinh}|${ma}` -> rec
   const flatByNameType = new Map();     // key: `${provKey}|${normalize(loai)}|${nameKey}` -> rec
-  for (const r of api) {
+  for (const r of flatRows) {
     const matinh = r.matinh != null ? String(r.matinh) : null;
     const ma = r.ma != null ? String(r.ma) : null;
     const provKey = normalizeProvinceName(r.tentinh || r.province?.name || '');
@@ -188,7 +200,7 @@ function main() {
     if (provKey && loai && nameKey) flatByNameType.set(`${provKey}|${loai}|${nameKey}`, r);
   }
 
-  for (const rec of api) {
+  for (const rec of flatRows) {
     // Treat each row as a new unit (flat rawApiData row)
     const provName = rec.tentinh || rec['3'];
     const newNameKey = normalizeProvinceName(provName || '');
