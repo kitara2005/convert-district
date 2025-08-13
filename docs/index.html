@@ -100,10 +100,64 @@
           zImg.addEventListener('mousedown', (e)=>{ dragging=true; zImg.classList.add('dragging'); startX=e.clientX-originX; startY=e.clientY-originY; });
           window.addEventListener('mousemove', (e)=>{ if(!dragging) return; originX=e.clientX-startX; originY=e.clientY-startY; apply(); });
           window.addEventListener('mouseup', ()=>{ dragging=false; zImg.classList.remove('dragging'); });
-          // Touch support
+          // Wheel/trackpad zoom (pinch on macOS sends wheel with ctrlKey)
+          function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+          wrap.addEventListener('wheel', (e)=>{
+            // Treat as zoom when ctrlKey (pinch-zoom gesture) or always within modal
+            e.preventDefault();
+            const rect = wrap.getBoundingClientRect();
+            const cx = e.clientX - rect.left;
+            const cy = e.clientY - rect.top;
+            // Image-space coords before scaling
+            const ix = (cx - originX) / scale;
+            const iy = (cy - originY) / scale;
+            const factor = Math.exp((-e.deltaY) * 0.0015);
+            const newScale = clamp(scale * factor, 1, 5);
+            // Keep cursor point stable
+            originX = cx - ix * newScale;
+            originY = cy - iy * newScale;
+            scale = newScale;
+            apply();
+          }, { passive: false });
+
+          // Touch support (one-finger pan, two-finger pinch zoom)
           zImg.addEventListener('touchstart', (e)=>{ if(e.touches.length===1){ dragging=true; const t=e.touches[0]; startX=t.clientX-originX; startY=t.clientY-originY; } }, {passive:true});
           zImg.addEventListener('touchmove', (e)=>{ if(!dragging||e.touches.length!==1) return; const t=e.touches[0]; originX=t.clientX-startX; originY=t.clientY-startY; apply(); }, {passive:true});
           zImg.addEventListener('touchend', ()=>{ dragging=false; });
+          let pinch = { active:false, startDist:0, startScale:1, cx:0, cy:0 };
+          wrap.addEventListener('touchstart', (e)=>{
+            if (e.touches.length===2){
+              e.preventDefault();
+              pinch.active = true;
+              const [a,b] = e.touches;
+              const rect = wrap.getBoundingClientRect();
+              pinch.cx = ((a.clientX + b.clientX)/2) - rect.left;
+              pinch.cy = ((a.clientY + b.clientY)/2) - rect.top;
+              const dx = a.clientX - b.clientX; const dy = a.clientY - b.clientY;
+              pinch.startDist = Math.hypot(dx, dy);
+              pinch.startScale = scale;
+            }
+          }, { passive:false });
+          wrap.addEventListener('touchmove', (e)=>{
+            if (pinch.active && e.touches.length===2){
+              e.preventDefault();
+              const [a,b] = e.touches;
+              const dx = a.clientX - b.clientX; const dy = a.clientY - b.clientY;
+              const dist = Math.hypot(dx, dy);
+              const rect = wrap.getBoundingClientRect();
+              const cx = ((a.clientX + b.clientX)/2) - rect.left;
+              const cy = ((a.clientY + b.clientY)/2) - rect.top;
+              // Image coords at pinch center
+              const ix = (cx - originX) / scale;
+              const iy = (cy - originY) / scale;
+              const newScale = clamp(pinch.startScale * (dist / pinch.startDist), 1, 5);
+              originX = cx - ix * newScale;
+              originY = cy - iy * newScale;
+              scale = newScale;
+              apply();
+            }
+          }, { passive:false });
+          wrap.addEventListener('touchend', ()=>{ pinch.active=false; }, { passive:true });
           modal.addEventListener('hidden.bs.modal', ()=>{ bsModal.dispose(); modal.remove(); });
         }
       })();
