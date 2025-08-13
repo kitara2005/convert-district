@@ -236,6 +236,11 @@ function stripAdminPrefixClient(name){
   return n.replace(/^(phuong|xa|thi tran)\s+/, '').trim();
 }
 
+function stripDistrictPrefixClient(name){
+  const n = normalizeVN(name||'');
+  return n.replace(/^(quan|huyen|thi xa|thanh pho|thu do|tp)\s+/, '').trim();
+}
+
 function parseSourcesClient(text){
   if (!text) return [];
   const cleaned = String(text).replace(/\n/g,' ').replace(/\s+/g,' ').trim();
@@ -272,7 +277,7 @@ async function reverseFallback(newProvCode, newWardCode){
     ]);
     const distNameKeyToKeys = new Map();
     for (const d of dists){
-      const k = normalizeVN(d.name).replace(/^(quan|huyen|thi xa|thanh pho|thu do|tp)\s+/, '').trim();
+      const k = stripDistrictPrefixClient(d.name);
       const arr = distNameKeyToKeys.get(k) || []; arr.push(d.key); distNameKeyToKeys.set(k, arr);
     }
     for (const s of entries){
@@ -280,7 +285,7 @@ async function reverseFallback(newProvCode, newWardCode){
       let candidates = wards.filter(w=> (w.nameKey===keyName));
       let parentMatched = false;
       if (s.parentDistrictName){
-        const parentKey = normalizeVN(s.parentDistrictName);
+        const parentKey = stripDistrictPrefixClient(s.parentDistrictName);
         const keys = distNameKeyToKeys.get(parentKey) || [];
         if (keys.length>0){
           const set = new Set(keys);
@@ -291,7 +296,7 @@ async function reverseFallback(newProvCode, newWardCode){
         }
       }
       if (candidates.length===0 && s.isPartial && s.parentDistrictName){
-        const parentKey = normalizeVN(s.parentDistrictName);
+        const parentKey = stripDistrictPrefixClient(s.parentDistrictName);
         const keys = distNameKeyToKeys.get(parentKey) || [];
         if (keys.length>0){
           const set = new Set(keys);
