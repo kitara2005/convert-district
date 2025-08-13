@@ -164,6 +164,14 @@ function normalizeVN(s){
   return s.normalize('NFD').replace(/\p{Diacritic}+/gu,'').toLowerCase();
 }
 
+function normalizeKey(s){
+  return normalizeVN(s||'')
+    .replace(/đ/g,'d')
+    .replace(/[^a-z0-9\s]/g,' ')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+
 function renderOptions(selectEl, items, getVal, getLabel, placeholder){
   const html = ['<option value="">'+placeholder+'</option>'].concat(items.map(it=>`<option value="${getVal(it)}">${getLabel(it)}</option>`));
   selectEl.innerHTML = html.join('');
@@ -236,6 +244,9 @@ async function showReverse(newWardCode){
 
 async function computeBestOldProvince(newProvCode, candidateOldProvCodes, sourcesText){
   if (!Array.isArray(candidateOldProvCodes) || candidateOldProvCodes.length===0){
+    // Fall back to global index across all provinces
+    const byIndex = await computeBestOldProvinceByIndexes(sourcesText);
+    if (byIndex) return byIndex;
     return newProvCode;
   }
   const entries = parseSourcesClient(sourcesText);
@@ -279,13 +290,50 @@ async function computeBestOldProvince(newProvCode, candidateOldProvCodes, source
   return bestCode;
 }
 
+async function computeBestOldProvinceByIndexes(sourcesText){
+  const [wardIdx, distIdx] = await Promise.all([
+    fetchJson('data/ward-index.json').catch(()=>({})),
+    fetchJson('data/district-index.json').catch(()=>({}))
+  ]);
+  const entries = parseSourcesClient(sourcesText);
+  const score = new Map();
+  function inc(p){ score.set(p, (score.get(p)||0)+1); }
+  for (const s of entries){
+    const raw = normalizeKey(s.name);
+    if (/^(quan|huyen|thi xa|thanh pho|thu do|tp)\s+/.test(raw)){
+      const dKey = stripDistrictPrefixClient(s.name);
+      const arr = distIdx[dKey] || [];
+      for (const it of arr) inc(String(it.provinceCode));
+      continue;
+    }
+    const wKey = stripAdminPrefixClient(s.name);
+    const arr = wardIdx[wKey] || [];
+    let allowedProv = null;
+    if (s.parentDistrictName){
+      const parentKey = stripDistrictPrefixClient(s.parentDistrictName);
+      const dArr = distIdx[parentKey] || [];
+      allowedProv = new Set(dArr.map(it=>String(it.provinceCode)));
+    }
+    for (const it of arr){
+      const p = String(it.provinceCode);
+      if (allowedProv && !allowedProv.has(p)) continue;
+      inc(p);
+    }
+  }
+  let best = null, bestScore = -1;
+  for (const [p, sc] of score.entries()){
+    if (sc > bestScore){ bestScore = sc; best = p; }
+  }
+  return best;
+}
+
 function stripAdminPrefixClient(name){
-  const n = normalizeVN(name||'');
+  const n = normalizeKey(name||'');
   return n.replace(/^(phuong|xa|thi tran)\s+/, '').trim();
 }
 
 function stripDistrictPrefixClient(name){
-  const n = normalizeVN(name||'');
+  const n = normalizeKey(name||'');
   return n.replace(/^(quan|huyen|thi xa|thanh pho|thu do|tp)\s+/, '').trim();
 }
 
