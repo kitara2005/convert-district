@@ -457,6 +457,27 @@ function main() {
   }
   fs.writeFileSync(path.join(OUT_DIR, 'new-to-old-provs.json'), JSON.stringify(newToOldOut));
 
+  // Build global indices for client-side old province inference
+  const districtIndex = {}; // nameKey -> [{provinceCode, districtKey, name}]
+  const wardIndex = {};     // nameKey -> [{provinceCode, wardKey, districtKey, name}]
+  for (const p of oldProvinces) {
+    const provCode = String(p.code);
+    let idx;
+    try { idx = loadOldIndex(provCode); } catch { continue; }
+    for (const d of idx.districts) {
+      const arr = districtIndex[d.nameKey] || [];
+      arr.push({ provinceCode: provCode, districtKey: d.key, name: d.name });
+      districtIndex[d.nameKey] = arr;
+    }
+    for (const w of idx.wards) {
+      const arr = wardIndex[w.nameKey] || [];
+      arr.push({ provinceCode: provCode, wardKey: w.key, districtKey: w.districtKey, name: w.name });
+      wardIndex[w.nameKey] = arr;
+    }
+  }
+  fs.writeFileSync(path.join(OUT_DIR, 'district-index.json'), JSON.stringify(districtIndex));
+  fs.writeFileSync(path.join(OUT_DIR, 'ward-index.json'), JSON.stringify(wardIndex));
+
   // Overrides disabled per user request (manual list kept for reference but not applied)
 
   // Ensure empty mapping files exist for provinces without mapping
